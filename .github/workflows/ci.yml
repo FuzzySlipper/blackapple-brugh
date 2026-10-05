@@ -1,0 +1,58 @@
+name: ci
+
+# Builds the campaign workspace with the current Rusty Goldbox CLI, cloned
+# beside it as goldbox.json expects.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: blackapple-brugh
+
+      # The art is in Git LFS. Cache the objects so each run doesn't spend
+      # LFS bandwidth downloading the same pictures again.
+      - name: List LFS objects
+        working-directory: blackapple-brugh
+        run: git lfs ls-files --long | cut -d ' ' -f1 | sort > ../.lfs-ids
+      - uses: actions/cache@v4
+        with:
+          path: blackapple-brugh/.git/lfs
+          key: lfs-${{ hashFiles('.lfs-ids') }}
+          restore-keys: lfs-
+      - name: Get LFS objects
+        working-directory: blackapple-brugh
+        run: git lfs pull
+
+      - uses: actions/checkout@v4
+        with:
+          repository: FuzzySlipper/rusty-goldbox
+          path: rusty-goldbox
+          lfs: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Get rusty and the pinned pair
+        working-directory: rusty-goldbox
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/FuzzySlipper/rusty-engine/main/scripts/install-rusty.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/rusty" install
+
+      - name: Build the workspace
+        run: dotnet run --project rusty-goldbox/src/RustyGoldbox.Cli -- workspace build blackapple-brugh --json
